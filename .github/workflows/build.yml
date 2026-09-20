@@ -12,6 +12,10 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Select Xcode 16
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+
       - name: Install dependencies
         run: |
           brew install xcodegen
