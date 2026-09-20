@@ -9,29 +9,36 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install dependencies
         run: |
           brew install xcodegen
           rustup target add aarch64-apple-ios
 
-      - name: Run build script without signing
+      - name: Generate Xcode Project
         run: |
-          chmod +x build-ipa.sh
-          export CODE_SIGNING_ALLOWED=NO
-          export CODE_SIGNING_REQUIRED=NO
-          export CODE_SIGN_IDENTITY=""
-          ./build-ipa.sh || {
-            sed -i '' 's/CODE_SIGNING_REQUIRED=YES/CODE_SIGNING_REQUIRED=NO/g' build-ipa.sh 2>/dev/null || true
-            sed -i '' 's/CODE_SIGN_IDENTITY=.*/CODE_SIGN_IDENTITY=""/g' build-ipa.sh 2>/dev/null || true
-            ./build-ipa.sh
-          }
+          xcodegen generate || true
+
+      - name: Build and Package Unsigned IPA
+        run: |
+          xcodebuild clean archive \
+            -scheme AirCard \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/AirCard.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+          mkdir -p build/Payload
+          cp -r build/AirCard.xcarchive/Products/Applications/*.app build/Payload/
+          cd build
+          zip -qr AirCard-iOS.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AirCard-iOS-IPA
-          path: |
-            build/*.ipa
-            build/**/*.ipa
-            *.ipa
+          path: build/AirCard-iOS.ipa
