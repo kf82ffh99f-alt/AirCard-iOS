@@ -175,6 +175,21 @@ struct CreditsSheet: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
+
+                            Divider()
+
+                            HStack(spacing: 12) {
+                                Image(systemName: "bolt.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.yellow)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("NeoSpring & PosterBoard")
+                                        .font(.subheadline.bold())
+                                    Text("SpringBoard reload & .tendies wallpapers (@neonmodder123, @skadz108, @rooootdev)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         .padding(14)
                         .background(Color(uiColor: .tertiarySystemBackground))
@@ -227,24 +242,34 @@ struct CompactLogView: View {
                 }
                 Button {
                     UIPasteboard.general.string = lines.joined(separator: "\n")
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        copied = false
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        copied = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        var t2 = Transaction()
+                        t2.disablesAnimations = true
+                        withTransaction(t2) {
+                            copied = false
+                        }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc.fill")
-                        Text(copied ? "Copied! ✅" : "Copy")
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(copied ? "Copied" : "Copy")
+                            .font(.system(size: 11, weight: .bold))
                     }
-                    .font(.caption.bold())
                     .foregroundStyle(copied ? .green : .blue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color(uiColor: .systemFill))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Color(uiColor: .tertiarySystemFill))
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.borderless)
+                .transaction { $0.animation = nil }
             }
 
             ScrollViewReader { proxy in
@@ -340,6 +365,10 @@ struct ContentView: View {
             PasscodeThemeTab()
                 .tabItem { Label("Passcode", systemImage: "lock.circle.fill") }
                 .tag(AppTab.passcodeThemes)
+
+            TendiesView()
+                .tabItem { Label("Wallpapers", systemImage: "photo.stack.fill") }
+                .tag(AppTab.wallpapers)
         }
         .alert("Notice", isPresented: Binding(
             get: { vm.errorMessage != nil },
@@ -358,6 +387,10 @@ struct ContentView: View {
             if let url = vm.exportedThemeURL {
                 ShareSheet(items: [url])
             }
+        }
+        .onAppear {
+            vm.showSuccessAlert = false
+            vm.successAlertMessage = ""
         }
     }
 }
@@ -382,7 +415,7 @@ struct PairingTab: View {
                             Text("AirCard-iOS")
                                 .font(.title2.bold())
                             Spacer()
-                            Text("iOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion) · v1.2.5")
+                            Text("iOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion) · v1.3")
                                 .font(.caption.monospaced().bold())
                                 .padding(.horizontal, 8).padding(.vertical, 3)
                                 .background(Color.blue.opacity(0.12))
@@ -483,14 +516,14 @@ struct PairingTab: View {
                                         .font(.footnote.weight(.semibold))
                                         .foregroundStyle(.primary)
 
-                                    Button {
+                                     Button {
                                         if let url = URL(string: UIApplication.openSettingsURLString) {
                                             UIApplication.shared.open(url)
                                         }
                                     } label: {
                                         Label("Open Settings App Now", systemImage: "arrow.up.forward.app")
                                             .bold()
-                                            .frame(maxWidth: .infinity)
+                                            .frame(maxWidth: .infinity, alignment: .center)
                                     }
                                     .buttonStyle(.borderedProminent)
                                     .tint(.orange)
@@ -503,35 +536,50 @@ struct PairingTab: View {
                             Button(role: .cancel) {
                                 vm.cancelPairing()
                             } label: {
-                                Label("Cancel Pairing", systemImage: "xmark")
-                                    .frame(maxWidth: .infinity)
+                                HStack(spacing: 8) {
+                                    Spacer()
+                                    Image(systemName: "xmark")
+                                    Text("Cancel Pairing")
+                                    Spacer()
+                                }
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
                             }
                             .buttonStyle(.bordered)
                             .tint(.red)
                         }
                     } else {
-                        if !vm.pairingStatus.isEmpty && vm.pairingStatus != "idle" {
-                            Text(vm.pairingStatus)
-                                .font(.caption)
-                                .foregroundStyle(
-                                    vm.pairingStatus.contains("✅") ? .green :
-                                    vm.pairingStatus.contains("❌") || vm.pairingStatus.contains("failed") ? .red :
-                                    .secondary
-                                )
-                        }
+                        VStack(spacing: 12) {
+                            if !vm.pairingStatus.isEmpty && vm.pairingStatus != "idle" {
+                                Text(vm.pairingStatus)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(
+                                        vm.pairingStatus.contains("✅") ? .green :
+                                        vm.pairingStatus.contains("❌") || vm.pairingStatus.contains("failed") ? .red :
+                                        .secondary
+                                    )
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                            }
 
-                        Button {
-                            vm.startPairing()
-                        } label: {
-                            Label(
-                                vm.hasPairingFile ? "Re-Pair This iPhone" : "Pair This iPhone",
-                                systemImage: "antenna.radiowaves.left.and.right"
-                            )
-                            .bold()
-                            .frame(maxWidth: .infinity)
+                            Button {
+                                vm.startPairing()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Spacer()
+                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                                        .font(.body.weight(.semibold))
+                                    Text(vm.hasPairingFile ? "Re-Pair This iPhone" : "Pair This iPhone")
+                                        .font(.headline)
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 48)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
                     }
                 }
 
@@ -545,8 +593,11 @@ struct PairingTab: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 60)
+            }
             .navigationTitle("AirCard-iOS")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -626,7 +677,7 @@ struct VPNStatusRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
 
-            HStack {
+            HStack(spacing: 8) {
                 Text("Device IP:")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -634,14 +685,20 @@ struct VPNStatusRow: View {
                     .font(.caption.monospaced())
                     .keyboardType(.decimalPad)
                     .autocorrectionDisabled()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(uiColor: .tertiarySystemFill))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                     .frame(width: 120)
+                Spacer()
                 Button {
                     vm.refreshNetworkStatus()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.caption)
+                        .font(.caption.bold())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
             }
 
             if !vm.networkDetail.isEmpty {
@@ -864,6 +921,11 @@ struct WalletCardsTab: View {
                     }
                 }
                 .padding(.vertical)
+                .transaction { $0.animation = nil }
+            }
+            .transaction { $0.animation = nil }
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 60)
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Wallet Cards (\(vm.cards.count))")
@@ -879,6 +941,7 @@ struct WalletCardsTab: View {
                         .font(.subheadline.bold())
                         .foregroundStyle(vm.isScanningCards ? .red : .blue)
                     }
+                    .transaction { $0.animation = nil }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -1049,6 +1112,7 @@ struct WalletCardsTab: View {
             .background(vm.isScanningCards ? Color.blue.opacity(0.12) : Color(uiColor: .secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal)
+            .transaction { $0.animation = nil }
         }
     }
 
@@ -1168,22 +1232,43 @@ struct WalletCardsTab: View {
 
             HStack(spacing: 12) {
                 Button {
-                    vm.startCardScanning()
+                    vm.toggleCardScanning()
                 } label: {
-                    Label("Scan Cards", systemImage: "wave.3.left.circle")
-                        .bold()
+                    HStack(spacing: 6) {
+                        Spacer()
+                        Image(systemName: vm.isScanningCards ? "stop.circle.fill" : "wave.3.left.circle")
+                        Text(vm.isScanningCards ? "Stop Scan" : "Scan Cards")
+                        Spacer()
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(vm.isScanningCards ? .red : .blue)
+                .transaction { $0.animation = nil }
 
                 Button {
                     showAddSheet = true
                 } label: {
-                    Label("Add Manually", systemImage: "plus")
+                    HStack(spacing: 6) {
+                        Spacer()
+                        Image(systemName: "plus")
+                        Text("Add Manually")
+                        Spacer()
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
                 }
                 .buttonStyle(.bordered)
+                .transaction { $0.animation = nil }
             }
+            .padding(.horizontal, 24)
+            .transaction { $0.animation = nil }
         }
         .frame(maxWidth: .infinity)
+        .transaction { $0.animation = nil }
     }
 }
 
@@ -1262,6 +1347,9 @@ struct PasscodeThemeTab: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 60)
+            }
             .navigationTitle("Passcode Theme")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -1316,7 +1404,7 @@ struct ApplyThemeSection: View {
                 } label: {
                     Label(vm.loadedTheme == nil ? "Choose .passthm from Files…" : "Change .passthm…",
                           systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
 
                 if vm.loadedTheme != nil {
@@ -1356,20 +1444,34 @@ struct ApplyThemeSection: View {
                     vm.adoptThemeIntoCreator()
                 } label: {
                     Label("Edit in Theme Creator", systemImage: "pencil")
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
+                .buttonStyle(.bordered)
             }
 
             PasscodeTargetSection()
 
             Section {
-                flashButton
+                VStack(spacing: 12) {
+                    flashButton
 
-                Button(role: .destructive) {
-                    vm.clearLoadedTheme()
-                } label: {
-                    Label("Remove / Unload Theme", systemImage: "trash")
+                    Button(role: .destructive) {
+                        vm.clearLoadedTheme()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Spacer()
+                            Image(systemName: "trash")
+                            Text("Remove / Unload Theme")
+                            Spacer()
+                        }
+                        .font(.headline)
                         .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                 }
+                .listRowInsets(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
             }
         }
     }
@@ -1377,20 +1479,27 @@ struct ApplyThemeSection: View {
     @ViewBuilder
     private var flashButton: some View {
         if case .running = vm.passthmFlashPhase {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ProgressView()
-                VStack(alignment: .leading) {
-                    Text("Flashing…").font(.subheadline.bold())
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Flashing Theme…").font(.subheadline.bold())
                     ProgressView(value: vm.passthmFlashProgress)
                 }
             }
+            .padding(.vertical, 4)
         } else if case .done(let ok) = vm.passthmFlashPhase, !ok {
             Button {
                 vm.flashPassthm()
             } label: {
-                Label("Retry Flash Theme", systemImage: "arrow.clockwise")
-                    .bold()
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "arrow.clockwise")
+                    Text("Retry Flash Theme")
+                    Spacer()
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
             }
             .buttonStyle(.borderedProminent)
             .tint(.orange)
@@ -1399,9 +1508,15 @@ struct ApplyThemeSection: View {
             Button {
                 vm.flashPassthm()
             } label: {
-                Label("Flash Theme to iPhone", systemImage: "bolt.fill")
-                    .bold()
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "bolt.fill")
+                    Text("Flash Theme to iPhone")
+                    Spacer()
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
             }
             .buttonStyle(.borderedProminent)
             .disabled(!vm.canFlashPassthm)
@@ -1416,7 +1531,7 @@ struct PasscodeTargetSection: View {
 
     var body: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: "bolt.badge.clock")
                         .foregroundColor(.blue)
@@ -1427,42 +1542,49 @@ struct PasscodeTargetSection: View {
 
                 // 1. Target System
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("System Caches:")
-                        .font(.caption)
+                    Text("System Caches")
+                        .font(.caption.bold())
                         .foregroundColor(.secondary)
-                    Picker("Target", selection: $vm.targetTelephonyVersion) {
+                    Picker("System Caches", selection: $vm.targetTelephonyVersion) {
                         Text("TelephonyUI-10 (iOS 18+)").tag("TelephonyUI-10")
                         Text("TelephonyUI-9 (iOS 16–17)").tag("TelephonyUI-9")
                         Text("TelephonyUI-8 (iOS 14–15)").tag("TelephonyUI-8")
                         Text("Universal (All)").tag("all")
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
                 }
+
+                Divider()
 
                 // 2. System Language
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("System Language:")
-                        .font(.caption)
+                    Text("System Language")
+                        .font(.caption.bold())
                         .foregroundColor(.secondary)
-                    Picker("", selection: $vm.passcodeLanguageTarget) {
+                    Picker("System Language", selection: $vm.passcodeLanguageTarget) {
                         ForEach(PasscodeLanguageTarget.allCases) { item in
                             Text(item.rawValue).tag(item)
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
                 }
+
+                Divider()
 
                 // 3. Font Weight / Style
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Font Weight / Style:")
-                        .font(.caption)
+                    Text("Font Weight / Style")
+                        .font(.caption.bold())
                         .foregroundColor(.secondary)
-                    Picker("", selection: $vm.passcodeBoldTarget) {
+                    Picker("Font Weight / Style", selection: $vm.passcodeBoldTarget) {
                         ForEach(PasscodeBoldTarget.allCases) { item in
                             Text(item.rawValue).tag(item)
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
                 }
 
                 // Dynamic hint
@@ -1532,24 +1654,43 @@ struct ThemeCreatorSection: View {
 
         // Action Section
         Section {
-            flashButton
+            VStack(spacing: 12) {
+                flashButton
 
-            if !vm.effectiveKeys.isEmpty {
-                Button {
-                    _ = vm.exportPassthm()
-                } label: {
-                    Label("Export .passthm...", systemImage: "square.and.arrow.up")
+                if !vm.effectiveKeys.isEmpty {
+                    Button {
+                        _ = vm.exportPassthm()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Spacer()
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Export .passthm...")
+                            Spacer()
+                        }
+                        .font(.headline)
                         .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                        .frame(height: 48)
+                    }
+                    .buttonStyle(.bordered)
 
-                Button(role: .destructive) {
-                    vm.clearAllCreator()
-                } label: {
-                    Label("Clear All", systemImage: "trash")
+                    Button(role: .destructive) {
+                        vm.clearAllCreator()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Spacer()
+                            Image(systemName: "trash")
+                            Text("Clear All")
+                            Spacer()
+                        }
+                        .font(.headline)
                         .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                 }
             }
+            .listRowInsets(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
         }
     }
 
@@ -1561,7 +1702,7 @@ struct ThemeCreatorSection: View {
                 } label: {
                     Label(vm.posterImage == nil ? "Select Photo for Keypad…" : "Change Photo…",
                           systemImage: "photo")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
             .confirmationDialog("Choose Poster Image Source", isPresented: $showPosterSourceDialog, titleVisibility: .visible) {
@@ -1790,20 +1931,27 @@ struct ThemeCreatorSection: View {
     @ViewBuilder
     private var flashButton: some View {
         if case .running = vm.passthmFlashPhase {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ProgressView()
-                VStack(alignment: .leading) {
-                    Text("Flashing…").font(.subheadline.bold())
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Flashing Theme…").font(.subheadline.bold())
                     ProgressView(value: vm.passthmFlashProgress)
                 }
             }
+            .padding(.vertical, 4)
         } else if case .done(let ok) = vm.passthmFlashPhase, !ok {
             Button {
                 vm.flashPassthm()
             } label: {
-                Label("Retry Flash Theme", systemImage: "arrow.clockwise")
-                    .bold()
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "arrow.clockwise")
+                    Text("Retry Flash Theme")
+                    Spacer()
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
             }
             .buttonStyle(.borderedProminent)
             .tint(.orange)
@@ -1812,9 +1960,15 @@ struct ThemeCreatorSection: View {
             Button {
                 vm.flashPassthm()
             } label: {
-                Label("Flash Theme to iPhone", systemImage: "bolt.fill")
-                    .bold()
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "bolt.fill")
+                    Text("Flash Theme to iPhone")
+                    Spacer()
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
             }
             .buttonStyle(.borderedProminent)
             .disabled(!vm.canFlashPassthm)

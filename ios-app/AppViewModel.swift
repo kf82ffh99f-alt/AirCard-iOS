@@ -67,6 +67,16 @@ final class AppViewModel: ObservableObject {
     @Published var passthmFlashProgress: Double = 0
     @Published var passthmFlashLog: [String] = []
 
+    // MARK: - Tendies / Wallpapers tab
+    @Published var tendieItems: [TendieItem] = []
+    @Published var posterBoardContainer: String = ""
+    @Published var isDetectingContainer: Bool = false
+    @Published var resetPBProtections: Bool = true
+    @Published var tendiesFlashPhase: FlashPhase = .idle
+    @Published var tendiesFlashProgress: Double = 0
+    @Published var tendiesFlashLog: [String] = []
+    @Published var isNeoSpringing: Bool = false
+
     // MARK: - AirCard UI States & Properties
     static var detectedDeviceLanguage: PasscodeLanguageTarget {
         let code = Locale.preferredLanguages.first?.components(separatedBy: "-").first?.lowercased() ?? "en"
@@ -106,6 +116,8 @@ final class AppViewModel: ObservableObject {
         loadSavedCards()
         refreshNetworkStatus()
         scanDocumentsDirectory()
+        posterBoardContainer = UserDefaults.standard.string(forKey: "aircard.posterboard_container") ?? ""
+        loadSavedTendies()
 
         // Hook Rust log output into our log array.
         AppViewModel.sharedLogSink = { [weak self] line in
@@ -128,6 +140,42 @@ final class AppViewModel: ObservableObject {
 
         // Find .passthm themes
         documentsThemes = items.filter { $0.hasSuffix(".passthm") }.sorted()
+
+        // Auto-discover any .tendies dropped into Documents or Documents/Tendies
+        scanDocumentsForTendies()
+    }
+
+    func scanDocumentsForTendies() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let tendiesDir = TendiesEngine.tendiesStorageDirectory
+        
+        var foundURLs: [URL] = []
+        if let rootItems = try? FileManager.default.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
+            for u in rootItems where u.pathExtension.lowercased() == "tendies" {
+                let target = tendiesDir.appendingPathComponent(u.lastPathComponent)
+                if u.path != target.path && !FileManager.default.fileExists(atPath: target.path) {
+                    try? FileManager.default.copyItem(at: u, to: target)
+                }
+                foundURLs.append(target)
+            }
+        }
+        if let storedItems = try? FileManager.default.contentsOfDirectory(at: tendiesDir, includingPropertiesForKeys: nil) {
+            for u in storedItems where u.pathExtension.lowercased() == "tendies" {
+                if !foundURLs.contains(u) {
+                    foundURLs.append(u)
+                }
+            }
+        }
+
+        let newURLs = foundURLs.filter { url in
+            !tendieItems.contains(where: { $0.fileName == url.lastPathComponent })
+        }
+
+        guard !newURLs.isEmpty else { return }
+
+        Task {
+            await self.importTendieFiles(urls: newURLs)
+        }
     }
 
     @discardableResult
@@ -234,6 +282,7 @@ final class AppViewModel: ObservableObject {
     func cancelPairing() {
         PairingController.shared.softCancel()
         pairingPhase = .idle
+        pairingStatus = ""
     }
 
     func deletePairingFile() {
@@ -271,10 +320,14 @@ final class AppViewModel: ObservableObject {
 
 
     func toggleCardScanning() {
-        if isScanningCards {
-            stopCardScanning()
-        } else {
-            startCardScanning()
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            if isScanningCards {
+                stopCardScanning()
+            } else {
+                startCardScanning()
+            }
         }
     }
 
@@ -292,8 +345,12 @@ final class AppViewModel: ObservableObject {
             return
         }
 
-        isScanningCards = true
-        scanStatusText = "Open Apple Pay (double-click Side button) and tap your card…"
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            isScanningCards = true
+            scanStatusText = "Open Apple Pay (double-click Side button) and tap your card…"
+        }
         log.append("Started live card scanner…")
 
         let pairingPath = PairingController.pairingFilePath()
@@ -350,8 +407,12 @@ final class AppViewModel: ObservableObject {
 
     func stopCardScanning() {
         al_syslog_stream_stop()
-        isScanningCards = false
-        scanStatusText = "Scanning stopped. Total cards: \(cards.count)."
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            isScanningCards = false
+            scanStatusText = "Scanning stopped. Total cards: \(cards.count)."
+        }
         saveCards()
     }
 
@@ -1044,11 +1105,154 @@ final class AppViewModel: ObservableObject {
         log.append(line)
     }
 
+    // MARK: - Tendies / Wallpapers
+
+    func loadSavedTendies() {
+        if let data = UserDefaults.standard.data(forKey: "aircard.saved_tendies"),
+           let items = try? JSONDecoder().decode([TendieItem].self, from: data) {
+            self.tendieItems = items.filter { FileManager.default.fileExists(atPath: $0.fileURL.path) }
+        }
+    }
+
+    func saveTendieItems() {
+        if let data = try? JSONEncoder().encode(tendieItems) {
+            UserDefaults.standard.set(data, forKey: "aircard.saved_tendies")
+        }
+    }
+
+    func importTendieFiles(urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        var importedCount = 0
+        var lastImportedName = ""
+        for url in urls {
+            do {
+                let item = try await TendiesEngine.shared.importTendie(from: url)
+                await MainActor.run {
+                    self.tendieItems.removeAll(where: { $0.fileName == item.fileName })
+                    self.tendieItems.append(item)
+                    self.saveTendieItems()
+                    importedCount += 1
+                    lastImportedName = item.name
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "Failed to import \(url.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func deleteTendie(item: TendieItem) {
+        try? FileManager.default.removeItem(at: item.fileURL)
+        tendieItems.removeAll(where: { $0.id == item.id })
+        saveTendieItems()
+    }
+
+    func autoDetectPosterBoardContainer(silent: Bool = false) async {
+        let pairingPath = PairingController.pairingFilePath()
+        guard FileManager.default.fileExists(atPath: pairingPath) else {
+            if !silent {
+                await MainActor.run {
+                    self.errorMessage = "No pairing file active. Pair your device first in the Pairing tab."
+                }
+            }
+            return
+        }
+
+        await MainActor.run { self.isDetectingContainer = true }
+        defer {
+            Task { @MainActor in self.isDetectingContainer = false }
+        }
+
+        do {
+            let container = try await TendiesEngine.shared.detectPosterBoardContainer(pairingPath: pairingPath)
+            await MainActor.run {
+                self.posterBoardContainer = container
+                UserDefaults.standard.set(container, forKey: "aircard.posterboard_container")
+            }
+        } catch {
+            if !silent {
+                await MainActor.run {
+                    self.errorMessage = "Auto-detect failed: \(error.localizedDescription)\nEnsure LocalDevVPN is connected and device is unlocked."
+                }
+            }
+        }
+    }
+
+    func flashSelectedTendies() async {
+        let selected = tendieItems.filter { $0.isSelected }
+        guard !selected.isEmpty else {
+            errorMessage = "No wallpapers selected to flash."
+            return
+        }
+
+        let pairingPath = PairingController.pairingFilePath()
+        guard FileManager.default.fileExists(atPath: pairingPath) else {
+            errorMessage = "No pairing file active. Please pair your device first."
+            return
+        }
+
+        var container = posterBoardContainer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if container.isEmpty {
+            do {
+                container = try await TendiesEngine.shared.detectPosterBoardContainer(pairingPath: pairingPath)
+                self.posterBoardContainer = container
+                UserDefaults.standard.set(container, forKey: "aircard.posterboard_container")
+            } catch {
+                errorMessage = "PosterBoard container could not be found automatically. Ensure LocalDevVPN is connected and iPhone is unlocked."
+                return
+            }
+        }
+
+        tendiesFlashPhase = .running
+        tendiesFlashProgress = 0
+        tendiesFlashLog = []
+
+        do {
+            try await TendiesEngine.shared.flashTendies(
+                items: selected,
+                containerPath: container,
+                resetProtections: resetPBProtections,
+                pairingPath: pairingPath,
+                log: { [weak self] line in
+                    DispatchQueue.main.async {
+                        self?.tendiesFlashLog.append(line)
+                    }
+                },
+                progress: { [weak self] p in
+                    DispatchQueue.main.async {
+                        self?.tendiesFlashProgress = p
+                    }
+                }
+            )
+            tendiesFlashPhase = .done(ok: true)
+            tendiesFlashProgress = 1.0
+            tendiesFlashLog.append("🎉 Wallpapers applied successfully!")
+            tendiesFlashLog.append("⚡ Triggering NeoSpring respring...")
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.isNeoSpringing = true
+                RespringHelper.triggerNeoSpring()
+            }
+        } catch {
+            tendiesFlashLog.append("❌ Error: \(error.localizedDescription)")
+            tendiesFlashPhase = .done(ok: false)
+        }
+    }
+
+    func respringDevice() {
+        tendiesFlashLog.append("⚡ Triggering NeoSpring respring...")
+        isNeoSpringing = true
+        RespringHelper.triggerNeoSpring()
+    }
+
     func reset() {
         cardFlashPhase = .idle
         cardFlashProgress = 0
         passthmFlashPhase = .idle
         passthmFlashProgress = 0
+        tendiesFlashPhase = .idle
+        tendiesFlashProgress = 0
         errorMessage = nil
     }
 }
