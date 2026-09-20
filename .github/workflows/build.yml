@@ -32,8 +32,15 @@ jobs:
 
       - name: Build and Package Unsigned IPA
         run: |
+          # Detect the exact scheme name automatically
+          SCHEME=$(xcodebuild -list -json | tr -d '\n' | sed -n 's/.*"schemes":\[\([^]]*\)\].*/\1/p' | awk -F'"' '{print $2}')
+          if [ -z "$SCHEME" ]; then
+            SCHEME="AirCard-iOS"
+          fi
+          echo "Building scheme: $SCHEME"
+
           xcodebuild clean archive \
-            -scheme AirCard \
+            -scheme "$SCHEME" \
             -destination "generic/platform=iOS" \
             -archivePath "build/AirCard.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
