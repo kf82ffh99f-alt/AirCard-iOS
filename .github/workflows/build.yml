@@ -12,9 +12,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Select Xcode 16
+      - name: Select Xcode 16+
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+          XCODE_PATH=$(find /Applications -maxdepth 1 -name "Xcode_16*.app" | sort -V | tail -n 1)
+          if [ -z "$XCODE_PATH" ]; then
+            XCODE_PATH=$(find /Applications -maxdepth 1 -name "Xcode*.app" | sort -V | tail -n 1)
+          fi
+          echo "Selected Xcode: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
 
       - name: Install dependencies
         run: |
