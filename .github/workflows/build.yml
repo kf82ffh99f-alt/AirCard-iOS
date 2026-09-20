@@ -15,13 +15,23 @@ jobs:
           brew install xcodegen
           rustup target add aarch64-apple-ios
 
-      - name: Run build script
+      - name: Run build script without signing
         run: |
           chmod +x build-ipa.sh
-          ./build-ipa.sh
+          export CODE_SIGNING_ALLOWED=NO
+          export CODE_SIGNING_REQUIRED=NO
+          export CODE_SIGN_IDENTITY=""
+          ./build-ipa.sh || {
+            sed -i '' 's/CODE_SIGNING_REQUIRED=YES/CODE_SIGNING_REQUIRED=NO/g' build-ipa.sh 2>/dev/null || true
+            sed -i '' 's/CODE_SIGN_IDENTITY=.*/CODE_SIGN_IDENTITY=""/g' build-ipa.sh 2>/dev/null || true
+            ./build-ipa.sh
+          }
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AirCard-iOS-IPA
-          path: build/*.ipa
+          path: |
+            build/*.ipa
+            build/**/*.ipa
+            *.ipa
