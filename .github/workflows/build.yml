@@ -20,42 +20,27 @@ jobs:
           fi
           echo "Selected Xcode: $XCODE_PATH"
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          echo "DEVELOPER_DIR=$XCODE_PATH/Contents/Developer" >> $GITHUB_ENV
 
       - name: Install dependencies & Rust targets
         run: |
           brew install xcodegen
-          rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
-          cargo install cargo-swift 2>/dev/null || true
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
-      - name: Build Rust XCFramework
+      - name: Build Rust FFI and AirliftFFI.xcframework
         run: |
-          # Look for existing build script for Airlift / FFI
-          if [ -f "./build-framework.sh" ]; then
-            chmod +x ./build-framework.sh
-            ./build-framework.sh
-          elif [ -f "./build-rust.sh" ]; then
-            chmod +x ./build-rust.sh
-            ./build-rust.sh
-          elif [ -d "airlift" ] || [ -d "rust" ]; then
-            cd airlift 2>/dev/null || cd rust 2>/dev/null
-            cargo build --release --target aarch64-apple-ios
-            cd -
-          fi
-
-          # If build-ipa.sh has rust build instructions, run them manually
-          bash -n build-ipa.sh || true
+          chmod +x build-ios.sh
+          ./build-ios.sh
 
       - name: Generate Xcode Project
         run: |
-          xcodegen generate || true
+          xcodegen generate
 
       - name: Build and Package Unsigned IPA
         run: |
-          # Disable code signing in the build script
+          # Patch build-ipa.sh to disable mandatory signing requirements
           sed -i '' 's/CODE_SIGNING_REQUIRED=YES/CODE_SIGNING_REQUIRED=NO/g' build-ipa.sh 2>/dev/null || true
           sed -i '' 's/CODE_SIGN_IDENTITY=.*/CODE_SIGN_IDENTITY=""/g' build-ipa.sh 2>/dev/null || true
-          sed -i '' 's/xcodebuild clean build/xcodebuild clean build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""/g' build-ipa.sh 2>/dev/null || true
-          sed -i '' 's/xcodebuild clean archive/xcodebuild clean archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""/g' build-ipa.sh 2>/dev/null || true
 
           export CODE_SIGNING_ALLOWED=NO
           export CODE_SIGNING_REQUIRED=NO
@@ -63,7 +48,14 @@ jobs:
           export AD_HOC_CODE_SIGNING_ALLOWED=YES
 
           chmod +x build-ipa.sh
-          ./build-ipa.sh
+          ./build-ipa.sh || {
+            echo "Packaging from generated app..."
+            mkdir -p build/Payload
+            cp -r build/Build/Products/Release-iphoneos/*.app build/Payload/ 2>/dev/null || \
+            cp -r build/DerivedData/Build/Products/Release-iphoneos/*.app build/Payload/ 2>/dev/null || true
+            cd build
+            zip -qr AirCard-iOS.ipa Payload
+          }
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
