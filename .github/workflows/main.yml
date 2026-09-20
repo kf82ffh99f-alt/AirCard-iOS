@@ -1,4 +1,4 @@
-name: Build IPA
+name: Bu
 
 on:
   workflow_dispatch:
